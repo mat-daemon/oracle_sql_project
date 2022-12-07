@@ -1,0 +1,646 @@
+SET SERVEROUTPUT ON;
+
+--34
+DECLARE
+    number_of_cats NUMBER;
+BEGIN
+    SELECT COUNT(pseudo) INTO number_of_cats FROM Kocury WHERE funkcja='&fun';
+    IF number_of_cats > 0
+        THEN DBMS_OUTPUT.PUT_LINE('Cat found');
+        ELSE DBMS_OUTPUT.PUT_LINE('Cat not found');
+    END IF;
+END;
+
+
+--35
+DECLARE
+    SUBTYPE  PSEUDO_TYPE IS Kocury.pseudo%TYPE;
+    SUBTYPE  NAME_TYPE IS Kocury.imie%TYPE;
+    pseudo_kota PSEUDO_TYPE;
+    przydzial_calk NUMBER;
+    imie_kota NAME_TYPE;
+    miesiac NUMBER;
+    spelnia_kryteria BOOLEAN := FALSE;
+BEGIN
+    pseudo_kota := '&pseudo';
+    SELECT SUM(NVL(przydzial_myszy,0)+NVL(myszy_extra,0))*12 INTO przydzial_calk FROM Kocury 
+    WHERE pseudo=pseudo_kota;
+    SELECT imie INTO imie_kota FROM Kocury WHERE pseudo=pseudo_kota;
+    SELECT TO_CHAR(w_stadku_od, 'MM') INTO miesiac FROM Kocury WHERE pseudo=pseudo_kota;
+    
+    IF przydzial_calk > 700
+        THEN DBMS_OUTPUT.PUT_LINE('calkowity roczny przydzial myszy >700');
+            spelnia_kryteria := TRUE;
+    END IF;
+
+    IF imie_kota LIKE '%A%'
+        THEN DBMS_OUTPUT.PUT_LINE('imie zawiera litere A');
+            spelnia_kryteria := TRUE;
+    END IF;
+    
+    IF miesiac=5
+        THEN DBMS_OUTPUT.PUT_LINE('maj jest miesiacem przystapienia do stada');
+            spelnia_kryteria := TRUE;
+    END IF;
+    
+    IF NOT spelnia_kryteria
+        THEN DBMS_OUTPUT.PUT_LINE('nie odpowiada kryteriom');
+    END IF;
+END;
+
+--36
+DECLARE
+	CURSOR kocury_cr IS SELECT * FROM Kocury ORDER BY przydzial_myszy DESC FOR UPDATE OF przydzial_myszy;
+	kocur kocury_cr%ROWTYPE;
+	suma_myszy NUMBER(4) := 0;
+	max_suma_myszy NUMBER(4) := 1050;
+	max_dla_fun NUMBER := 0;
+	mod_nr NUMBER := 0;
+BEGIN
+    SELECT SUM(przydzial_myszy) into suma_myszy from Kocury;
+	<<loop_cursor>>
+	LOOP
+		OPEN kocury_cr;
+		
+		LOOP
+			FETCH kocury_cr INTO kocur;
+            EXIT WHEN kocury_cr%NOTFOUND;
+            
+			SELECT max_myszy INTO max_dla_fun FROM Funkcje WHERE funkcja=kocur.funkcja;
+			
+			IF 1.1*kocur.przydzial_myszy <= max_dla_fun
+            THEN
+                suma_myszy := suma_myszy +  ROUND(0.1*kocur.przydzial_myszy);
+                		UPDATE Kocury SET przydzial_myszy=ROUND(1.1*kocur.przydzial_myszy) WHERE pseudo=kocur.pseudo;
+			     	mod_nr := mod_nr + 1;
+			ELSIF 1.1*kocur.przydzial_myszy != max_dla_fun
+			THEN suma_myszy := suma_myszy +  (max_dla_fun - kocur.przydzial_myszy);
+                		UPDATE Kocury SET przydzial_myszy=max_dla_fun WHERE pseudo=kocur.pseudo;
+			     	mod_nr := mod_nr + 1;
+				
+			END IF;
+			
+			
+			EXIT loop_cursor WHEN suma_myszy > 1050;
+		END LOOP;
+		
+		CLOSE kocury_cr;
+	END LOOP loop_cursor;
+	
+	DBMS_OUTPUT.PUT_LINE(suma_myszy || ' ' || mod_nr);
+
+END;
+
+SELECT imie, przydzial_myszy FROM Kocury;
+
+ROLLBACK;
+
+
+--37
+DECLARE
+	nr number := 1;
+BEGIN
+	FOR re IN (SELECT pseudo, NVL(przydzial_myszy, 0) + NVL(myszy_extra, 0) myszy FROM Kocury ORDER BY NVL(przydzial_myszy, 0) + NVL(myszy_extra, 0) DESC)
+	LOOP
+		DBMS_OUTPUT.PUT_LINE(nr || ' ' || re.pseudo || ' ' || re.myszy);
+		EXIT WHEN nr=5;
+        nr := nr + 1;
+	END LOOP;
+END;
+
+
+
+--38
+DECLARE
+    max_superv number := &maksymalna_liczba_przelozonych;
+    real_max_superv  number;
+    curr_super number := 0;
+    CURSOR KocuryCursor IS (SELECT * FROM Kocury WHERE funkcja IN ('KOT', 'MILUSIA'));
+    kocur Kocury%ROWTYPE; 
+    szefKocura Kocury%ROWTYPE;
+    supervisorFound BOOLEAN;
+    table_data VARCHAR(20);
+BEGIN
+    SELECT Max(level) INTO real_max_superv FROM Kocury CONNECT BY PRIOR szef=pseudo START WITH funkcja IN ('KOT', 'MILUSIA');
+    max_superv := LEAST(max_superv, real_max_superv-1);
+    
+    DBMS_OUTPUT.PUT(RPAD('Imie', 15));
+    LOOP
+         EXIT WHEN curr_super = max_superv;
+        curr_super := curr_super+1;
+        DBMS_OUTPUT.PUT(RPAD('|SZEF' || curr_super, 15));
+    END LOOP;
+        DBMS_OUTPUT.PUT_LINE(' ');
+    
+    OPEN KocuryCursor;
+    LOOP
+        FETCH KocuryCursor INTO kocur;
+        EXIT WHEN KocuryCursor%NOTFOUND;
+        DBMS_OUTPUT.PUT(RPAD(kocur.imie, 15));
+        
+        curr_super := 0;
+        
+	<<supervisors>>
+        LOOP
+            curr_super := curr_super+1;
+            supervisorFound := True;
+            BEGIN
+                SELECT * INTO kocur FROM Kocury WHERE pseudo=kocur.szef;
+            EXCEPTION
+                WHEN NO_DATA_FOUND THEN supervisorFound := False;
+            END;
+            
+            EXIT WHEN curr_super > max_superv;
+            
+            IF NOT supervisorFound THEN table_data := ' ';
+            ELSE table_data := kocur.imie;
+            END IF;
+            
+            IF curr_super = max_superv THEN DBMS_OUTPUT.PUT_LINE('|' || RPAD(table_data, 15));
+            ELSE  DBMS_OUTPUT.PUT(RPAD('|' || table_data, 15));
+            END IF;
+            
+        END LOOP;
+    END LOOP;
+END;
+
+
+--39
+DECLARE 
+    numer_bandy Bandy.nr_bandy%TYPE := &nr_bandy;
+    nazwa_bandy Bandy.nazwa%TYPE := '&nazwa';
+    teren_bandy Bandy.teren%TYPE := '&teren';
+    liczba_band number;
+    zle_wartosci EXCEPTION;
+    zly_nr_bandy EXCEPTION;
+    blad VARCHAR(200) := '';
+BEGIN
+    IF numer_bandy <= 0 THEN RAISE zly_nr_bandy;
+    END IF;
+    
+    SELECT COUNT(nr_bandy) INTO liczba_band FROM Bandy WHERE nr_bandy=numer_bandy;
+    
+    IF liczba_band > 0 THEN blad := numer_bandy;
+    END IF;
+
+    SELECT COUNT(nr_bandy) INTO liczba_band FROM Bandy WHERE nazwa=nazwa_bandy;
+    IF liczba_band > 0 THEN blad := blad || ', ' || nazwa_bandy;
+    END IF;
+    
+    SELECT COUNT(nr_bandy) INTO liczba_band FROM Bandy WHERE teren=teren_bandy;
+    IF liczba_band > 0 THEN blad := blad || ', ' || teren_bandy;
+    END IF;
+    
+    IF length(blad) > 0 THEN RAISE zle_wartosci;
+    END IF;
+    
+    INSERT INTO Bandy(nr_bandy, nazwa, teren)
+    VALUES(numer_bandy, nazwa_bandy, teren_bandy); 
+EXCEPTION
+    WHEN zly_nr_bandy THEN DBMS_OUTPUT.PUT_LINE('Numer bandy powinien byc wiekszy niz 0');
+    WHEN zle_wartosci THEN DBMS_OUTPUT.PUT_LINE(blad || ': juz istnieje');
+END;
+
+ROLLBACK;
+
+
+--40
+CREATE OR REPLACE PROCEDURE dodaj_bande(numer_bandy Bandy.nr_bandy%TYPE, nazwa_bandy Bandy.nazwa%TYPE, teren_bandy Bandy.teren%TYPE)
+IS
+    liczba_band number;
+    zle_wartosci EXCEPTION;
+    zly_nr_bandy EXCEPTION;
+    blad VARCHAR(200) := '';
+BEGIN
+    IF numer_bandy <= 0 THEN RAISE zly_nr_bandy;
+    END IF;
+    
+    SELECT COUNT(nr_bandy) INTO liczba_band FROM Bandy WHERE nr_bandy=numer_bandy;
+    
+    IF liczba_band > 0 THEN blad := numer_bandy;
+    END IF;
+
+    SELECT COUNT(nr_bandy) INTO liczba_band FROM Bandy WHERE nazwa=nazwa_bandy;
+    IF liczba_band > 0 THEN blad := blad || ', ' || nazwa_bandy;
+    END IF;
+    
+    SELECT COUNT(nr_bandy) INTO liczba_band FROM Bandy WHERE teren=teren_bandy;
+    IF liczba_band > 0 THEN blad := blad || ', ' || teren_bandy;
+    END IF;
+    
+    IF length(blad) > 0 THEN RAISE zle_wartosci;
+    END IF;
+    
+    INSERT INTO Bandy(nr_bandy, nazwa, teren)
+    VALUES(numer_bandy, nazwa_bandy, teren_bandy); 
+EXCEPTION
+    WHEN zly_nr_bandy THEN DBMS_OUTPUT.PUT_LINE('Numer bandy powinien byc wiekszy niz 0');
+    WHEN zle_wartosci THEN DBMS_OUTPUT.PUT_LINE(blad || ': juz istnieje');
+END;
+
+SELECT * FROM Bandy;
+
+BEGIN
+    dodaj_bande(6, 'BOLKI', 'Lowisko');
+END;
+
+BEGIN
+    dodaj_bande(1, 'SZEFOSTWO', 'CALOSC');
+END;
+
+ROLLBACK;
+
+
+--41
+-- can't define instead of trigger on table (only on view)
+CREATE OR REPLACE TRIGGER pilnuj_indeksu_band
+BEFORE INSERT ON Bandy
+FOR EACH ROW
+    DECLARE
+        max_numer Bandy.nr_bandy%TYPE;
+    BEGIN
+        SELECT MAX(nr_bandy) INTO max_numer FROM Bandy; 
+        IF :NEW.nr_bandy != max_numer+1 THEN
+            RAISE_APPLICATION_ERROR(-20105, 'Numer bandy powinien byc o 1 wiekszy od najwiekszego numeru bandy');
+        END IF;
+    END;
+    
+SET SERVEROUTPUT ON;
+DROP TRIGGER pilnuj_indeksu_band;
+
+--good
+BEGIN
+    dodaj_bande(6, 'BOLKI', 'Lowisko');
+END;
+
+ROLLBACK;
+
+--error
+BEGIN
+    dodaj_bande(7, 'BOLKI', 'Lowisko');
+END;
+
+
+--42
+--a
+CREATE OR REPLACE PACKAGE pamiec AS
+  przydzial_tygrysa number DEFAULT 0;
+  myszy_extra number DEFAULT 0;
+  rozliczony boolean DEFAULT TRUE;
+END;
+
+
+CREATE OR REPLACE TRIGGER spisz_tygrysa
+BEFORE UPDATE ON Kocury
+BEGIN
+    SELECT przydzial_myszy INTO pamiec.przydzial_tygrysa FROM Kocury WHERE pseudo = 'TYGRYS';
+END;
+
+
+CREATE OR REPLACE TRIGGER sprawdz_dodatek
+BEFORE UPDATE ON Kocury
+FOR EACH ROW
+BEGIN
+    IF :NEW.funkcja='MILUSIA' THEN
+        IF :NEW.przydzial_myszy <= :OLD.przydzial_myszy THEN
+            :NEW.przydzial_myszy := :OLD.przydzial_myszy;
+        ELSE
+            IF :NEW.przydzial_myszy - :OLD.przydzial_myszy < ROUND(0.1*pamiec.przydzial_tygrysa) THEN
+                :NEW.przydzial_myszy := :OLD.przydzial_myszy + ROUND(0.1*pamiec.przydzial_tygrysa);
+                pamiec.przydzial_tygrysa := pamiec.przydzial_tygrysa - ROUND(0.1*pamiec.przydzial_tygrysa);
+                :NEW.myszy_extra := :NEW.myszy_extra + 5;
+            ELSIF :NEW.przydzial_myszy - :OLD.przydzial_myszy >= ROUND(0.1*pamiec.przydzial_tygrysa) THEN
+                pamiec.myszy_extra := pamiec.myszy_extra + 5;
+            END IF;
+            pamiec.rozliczony := FALSE;
+        END IF;
+    END IF;
+END;    
+
+
+CREATE OR REPLACE TRIGGER rozlicz_tygrysa
+AFTER UPDATE ON Kocury
+DECLARE
+    myszy number;
+BEGIN
+    IF NOT pamiec.rozliczony THEN
+        pamiec.rozliczony := TRUE;
+        UPDATE KOCURY SET przydzial_myszy = pamiec.przydzial_tygrysa WHERE pseudo='TYGRYS';
+        UPDATE Kocury SET myszy_extra  = myszy_extra + pamiec.myszy_extra WHERE pseudo='TYGRYS';
+    END IF;
+    pamiec.myszy_extra := 0;
+END;
+
+SELECT * from KOCURY;
+UPDATE Kocury SET przydzial_myszy = (przydzial_myszy + 5) WHERE pseudo='LASKA';
+ROLLBACK;
+
+
+DROP TRIGGER spisz_tygrysa;
+DROP TRIGGER sprawdz_dodatek;
+DROP TRIGGER rozlicz_tygrysa;
+
+
+--b
+CREATE OR REPLACE TRIGGER dodaj_milusiom
+FOR UPDATE
+ON Kocury 
+COMPOUND TRIGGER
+    przydzial_tygrysa number DEFAULT 0;
+    myszy_extra number DEFAULT 0;
+    myszy number;
+    rozlicz_tygrysa boolean DEFAULT false;
+    
+    BEFORE STATEMENT IS
+    BEGIN
+        SELECT przydzial_myszy INTO przydzial_tygrysa FROM Kocury WHERE pseudo = 'TYGRYS';
+    END BEFORE STATEMENT;
+    
+    BEFORE EACH ROW IS
+    BEGIN
+        IF :NEW.funkcja='MILUSIA' THEN
+            IF :NEW.przydzial_myszy <= :OLD.przydzial_myszy THEN
+                :NEW.przydzial_myszy := :OLD.przydzial_myszy;
+            ELSE
+                IF :NEW.przydzial_myszy - :OLD.przydzial_myszy < ROUND(0.1*przydzial_tygrysa) THEN
+                    :NEW.przydzial_myszy := :OLD.przydzial_myszy + ROUND(0.1*przydzial_tygrysa);
+                    przydzial_tygrysa := przydzial_tygrysa - ROUND(0.1*przydzial_tygrysa);
+                    :NEW.myszy_extra := :NEW.myszy_extra + 5;
+                ELSIF :NEW.przydzial_myszy - :OLD.przydzial_myszy >= ROUND(0.1*przydzial_tygrysa) THEN
+                    myszy_extra := myszy_extra + 5;
+                END IF;
+                rozlicz_tygrysa := true;
+            END IF;
+        END IF;
+    
+    END BEFORE EACH ROW;
+    
+    AFTER STATEMENT IS
+    
+    BEGIN
+        IF rozlicz_tygrysa THEN
+            UPDATE KOCURY SET przydzial_myszy = przydzial_tygrysa WHERE pseudo='TYGRYS';
+            UPDATE Kocury k SET k.myszy_extra  = k.myszy_extra + myszy_extra WHERE pseudo='TYGRYS';
+            rozlicz_tygrysa := false;
+        END IF;
+    END AFTER STATEMENT;
+    
+END dodaj_milusiom;
+
+
+UPDATE Kocury SET przydzial_myszy = przydzial_myszy + 1 WHERE funkcja='MILUSIA';
+
+DROP TRIGGER dodaj_milusiom;
+ROLLBACK;
+
+
+
+--43 dynamiczny sql
+DECLARE
+    licznik NUMBER DEFAULT 0;
+    liczba_kotow NUMBER DEFAULT 0;
+    suma_myszy NUMBER DEFAULT 0;
+BEGIN
+    DBMS_OUTPUT.PUT_LINE('');
+    DBMS_OUTPUT.PUT(LPAD('NAZWA BANDY', 15));
+    DBMS_OUTPUT.PUT(LPAD('PLEC', 10));
+    DBMS_OUTPUT.PUT(LPAD('ILE', 10));
+    
+    FOR funkcje_kocurow IN (SELECT * FROM Funkcje)
+    LOOP
+        DBMS_OUTPUT.PUT(LPAD(funkcje_kocurow.funkcja, 10));
+    END LOOP;
+    
+    DBMS_OUTPUT.PUT_LINE(LPAD('SUMA', 10));
+    
+    
+    FOR banda IN (SELECT * FROM Bandy)
+    LOOP
+        DBMS_OUTPUT.PUT(LPAD(banda.nazwa, 15));
+        
+        FOR pl IN (SELECT DISTINCT plec FROM Kocury)
+        LOOP
+            IF pl.plec != 'M' THEN
+                DBMS_OUTPUT.PUT(LPAD(' ', 15));
+            END IF;
+            
+            DBMS_OUTPUT.PUT(LPAD(pl.plec, 10));
+            
+            SELECT COUNT(*) INTO liczba_kotow FROM Kocury k WHERE k.nr_bandy=banda.nr_bandy AND k.plec=pl.plec;
+            DBMS_OUTPUT.PUT(LPAD(liczba_kotow, 10));
+            
+            FOR funkcje_kocurow IN (SELECT * FROM Funkcje)
+            LOOP
+                SELECT SUM(NVL(przydzial_myszy, 0) + NVL(myszy_extra, 0)) INTO licznik FROM Kocury k WHERE k.nr_bandy=banda.nr_bandy AND k.plec=pl.plec AND k.funkcja=funkcje_kocurow.funkcja;
+                DBMS_OUTPUT.PUT(LPAD(NVL(licznik, 0), 10));
+            END LOOP;
+            
+            SELECT SUM(NVL(przydzial_myszy, 0) + NVL(myszy_extra, 0)) INTO suma_myszy FROM Kocury k WHERE k.nr_bandy=banda.nr_bandy AND k.plec=pl.plec;
+            DBMS_OUTPUT.PUT(LPAD(NVL(suma_myszy, 0), 10));
+            
+            DBMS_OUTPUT.PUT_LINE('');
+        END LOOP;
+    END LOOP;
+    
+    
+    DBMS_OUTPUT.PUT(LPAD(NVL('ZJADA RAZEM', 0), 15));
+    DBMS_OUTPUT.PUT(LPAD(' ', 10));
+    DBMS_OUTPUT.PUT(LPAD(' ', 10));
+    
+    FOR funkcje_kocurow IN (SELECT * FROM Funkcje)
+    LOOP
+        SELECT SUM(NVL(przydzial_myszy, 0) + NVL(myszy_extra, 0)) INTO suma_myszy FROM Kocury k WHERE k.funkcja=funkcje_kocurow.funkcja;
+        DBMS_OUTPUT.PUT(LPAD(NVL(suma_myszy, 0), 10));
+    END LOOP;
+    
+    SELECT SUM(NVL(przydzial_myszy, 0) + NVL(myszy_extra, 0)) INTO suma_myszy FROM Kocury;
+    DBMS_OUTPUT.PUT(LPAD(NVL(suma_myszy, 0), 10));
+    DBMS_OUTPUT.PUT_LINE('');
+    
+END;
+
+
+--44
+CREATE OR REPLACE FUNCTION podatek (pseudonim Kocury.pseudo%TYPE) RETURN number
+AS 
+    myszy number := 0;
+    podwladni number := 0;
+    l_wrogow number := 0;
+    bandziory number := 0;
+    suma_podatku number := 0;
+BEGIN
+    SELECT CEIL((NVL(przydzial_myszy,0)+NVL(myszy_extra,0))*0.05) INTO myszy FROM Kocury WHERE pseudo=pseudonim;
+    suma_podatku := suma_podatku + myszy;
+    
+    SELECT COUNT(*) INTO podwladni FROM Kocury WHERE szef=pseudonim;
+    SELECT COUNT(*)INTO l_wrogow FROM Kocury k INNER JOIN Wrogowie_kocurow w ON k.pseudo=w.pseudo WHERE k.pseudo=pseudonim;
+    SELECT COUNT(*) INTO bandziory FROM Kocury k INNER JOIN Funkcje f ON k.funkcja = f.funkcja WHERE f.funkcja='BANDZIOR' AND k.pseudo=pseudonim;
+    
+    IF podwladni = 0 THEN suma_podatku := suma_podatku + 2;
+    END IF;
+    IF l_wrogow = 0 THEN suma_podatku := suma_podatku +1;
+    END IF;
+    IF bandziory > 0 THEN suma_podatku := suma_podatku + 1;
+    END IF;
+    
+    RETURN suma_podatku;
+END podatek;
+
+DROP FUNCTION podatek;
+
+CREATE OR REPLACE PACKAGE pakiet_kocurowy
+AS
+FUNCTION podatek (pseudonim Kocury.pseudo%TYPE) RETURN number;
+PROCEDURE dodaj_bande(numer_bandy Bandy.nr_bandy%TYPE, nazwa_bandy Bandy.nazwa%TYPE, teren_bandy Bandy.teren%TYPE);
+END pakiet_kocurowy;
+
+CREATE OR REPLACE PACKAGE BODY pakiet_kocurowy
+AS
+    PROCEDURE dodaj_bande(numer_bandy Bandy.nr_bandy%TYPE, nazwa_bandy Bandy.nazwa%TYPE, teren_bandy Bandy.teren%TYPE)
+    IS
+        liczba_band number;
+        zle_wartosci EXCEPTION;
+        zly_nr_bandy EXCEPTION;
+        blad VARCHAR(200) := '';
+    BEGIN
+        IF numer_bandy <= 0 THEN RAISE zly_nr_bandy;
+        END IF;
+        
+        SELECT COUNT(nr_bandy) INTO liczba_band FROM Bandy WHERE nr_bandy=numer_bandy;
+        
+        IF liczba_band > 0 THEN blad := numer_bandy;
+        END IF;
+    
+        SELECT COUNT(nr_bandy) INTO liczba_band FROM Bandy WHERE nazwa=nazwa_bandy;
+        IF liczba_band > 0 THEN blad := blad || ', ' || nazwa_bandy;
+        END IF;
+        
+        SELECT COUNT(nr_bandy) INTO liczba_band FROM Bandy WHERE teren=teren_bandy;
+        IF liczba_band > 0 THEN blad := blad || ', ' || teren_bandy;
+        END IF;
+        
+        IF length(blad) > 0 THEN RAISE zle_wartosci;
+        END IF;
+        
+        INSERT INTO Bandy(nr_bandy, nazwa, teren)
+        VALUES(numer_bandy, nazwa_bandy, teren_bandy); 
+    EXCEPTION
+        WHEN zly_nr_bandy THEN DBMS_OUTPUT.PUT_LINE('Numer bandy powinien byc wiekszy niz 0');
+        WHEN zle_wartosci THEN DBMS_OUTPUT.PUT_LINE(blad || ': juz istnieje');
+    END;
+    
+    FUNCTION podatek (pseudonim Kocury.pseudo%TYPE) RETURN number
+    AS 
+        myszy number := 0;
+        podwladni number := 0;
+        l_wrogow number := 0;
+        bandziory number := 0;
+        suma_podatku number := 0;
+    BEGIN
+        SELECT CEIL((NVL(przydzial_myszy,0)+NVL(myszy_extra,0))*0.05) INTO myszy FROM Kocury WHERE pseudo=pseudonim;
+        suma_podatku := suma_podatku + myszy;
+        
+        SELECT COUNT(*) INTO podwladni FROM Kocury WHERE szef=pseudonim;
+        SELECT COUNT(*)INTO l_wrogow FROM Kocury k INNER JOIN Wrogowie_kocurow w ON k.pseudo=w.pseudo WHERE k.pseudo=pseudonim;
+        SELECT COUNT(*) INTO bandziory FROM Kocury k INNER JOIN Funkcje f ON k.funkcja = f.funkcja WHERE f.funkcja='BANDZIOR' AND k.pseudo=pseudonim;
+        
+        IF podwladni = 0 THEN suma_podatku := suma_podatku + 2;
+        END IF;
+        IF l_wrogow = 0 THEN suma_podatku := suma_podatku +1;
+        END IF;
+        IF bandziory > 0 THEN suma_podatku := suma_podatku + 1;
+        END IF;
+        
+        RETURN suma_podatku;
+    END podatek;
+END pakiet_kocurowy;
+
+BEGIN
+    FOR kocur IN (SELECT * FROM Kocury)
+    LOOP
+        DBMS_OUTPUT.PUT_LINE(kocur.pseudo || ' ' || pakiet_kocurowy.podatek(kocur.pseudo));
+    END LOOP;
+END;
+
+DROP PACKAGE pakiet_kocurowy;
+
+
+--45 
+
+CREATE TABLE Dodatki_extra(
+    nr_dodatku NUMBER(3) generated by default on null as identity constraint dod_atki_extra_nr primary key,
+    pseudo VARCHAR2(15) REFERENCES Kocury(pseudo),
+    dodatek NUMBER(2)
+);
+
+
+CREATE OR REPLACE TRIGGER pilnuj_tygrysa
+AFTER UPDATE ON Kocury
+FOR EACH ROW
+DECLARE 
+    uzyt VARCHAR2(15);
+    polecenie VARCHAR2(100);
+    PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+    IF :NEW.funkcja = 'MILUSIA' THEN
+        IF :NEW.przydzial_myszy > :OLD.przydzial_myszy AND LOGIN_USER != 'TYGRYS' THEN
+            uzyt := LOGIN_USER;
+            EXECUTE IMMEDIATE
+            'BEGIN
+                FOR kot IN (SELECT * FROM Kocury WHERE funkcja=''MILUSIA'')
+                LOOP
+                    INSERT INTO Dodatki_extra(pseudo, dodatek) VALUES(kot.pseudo, -10);
+                END LOOP;
+            END;';
+            COMMIT;
+        END IF;
+    END IF;
+END;
+
+
+UPDATE Kocury SET przydzial_myszy = przydzial_myszy + 1 WHERE funkcja = 'MILUSIA';
+
+
+DROP TABLE Dodatki_extra;
+DROP TRIGGER pilnuj_tygrysa;
+
+
+--46
+CREATE TABLE Zdarzenia
+(uzytkownik VARCHAR2(15),
+data DATE, 
+pseudo VARCHAR2(10) CONSTRAINT zdarzenie_kot REFERENCES Kocury(pseudo), 
+polecenie VARCHAR2(20));
+
+
+CREATE OR REPLACE TRIGGER sprawdz_przydzial
+BEFORE UPDATE ON Kocury
+FOR EACH ROW
+DECLARE
+    minimum_myszy Funkcje.min_myszy%TYPE;
+    maximum_myszy Funkcje.min_myszy%TYPE;
+    pseudonim Kocury.pseudo%TYPE;
+    pol Zdarzenia.polecenie%TYPE;
+    uzy Zdarzenia.uzytkownik%TYPE; 
+    dat Zdarzenia.data%TYPE;
+    pragma AUTONOMOUS_TRANSACTION ;
+BEGIN
+    SELECT min_myszy INTO minimum_myszy FROM Funkcje WHERE funkcja = :NEW.funkcja;
+    SELECT max_myszy INTO maximum_myszy FROM Funkcje WHERE funkcja = :NEW.funkcja;
+    IF :NEW.przydzial_myszy < minimum_myszy OR :NEW.przydzial_myszy > maximum_myszy THEN
+        pseudonim := :OLD.pseudo;
+        pol:='UPDATE';
+        uzy:=LOGIN_USER; 
+        dat:=SYSDATE; 
+        INSERT INTO Zdarzenia VALUES(uzy, dat, pseudonim, pol);
+        COMMIT;
+        RAISE_APPLICATION_ERROR(-20105, 'Przydzial myszy nie miesci sie w zakresie');
+    END IF;
+    
+END;
+    
+UPDATE Kocury SET przydzial_myszy = 111 WHERE pseudo='TYGRYS';
+SELECT * FROM Zdarzenia;
+ROLLBACK;
+DROP TABLE Zdarzenia;
+DROP TRIGGER sprawdz_przydzial;
