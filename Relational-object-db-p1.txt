@@ -1,0 +1,327 @@
+--Kocury
+CREATE OR REPLACE TYPE Kocur AS OBJECT
+(imie VARCHAR2(15),
+plec VARCHAR2(1),
+pseudo VARCHAR2(15),
+szef VARCHAR2(15),
+w_stadku_od DATE,
+przydzial_myszy NUMBER(3),
+myszy_extra NUMBER(3),
+MEMBER FUNCTION Dane RETURN VARCHAR2
+);
+
+CREATE OR REPLACE TYPE BODY Kocur AS
+MEMBER FUNCTION Dane RETURN VARCHAR2 IS
+    BEGIN
+        RETURN imie || ', ' || ', ' || pseudo;  
+    END;
+END;
+
+CREATE TABLE KocuryO OF Kocur
+(CONSTRAINT pk_KocuryO PRIMARY KEY(pseudo));
+
+
+
+
+--plebs
+CREATE OR REPLACE TYPE CzlonekPlebsu AS OBJECT
+(
+idCP INTEGER,
+kot REF Kocur
+);
+
+CREATE TABLE Plebs OF CzlonekPlebsu
+(CONSTRAINT pk_EO PRIMARY KEY (idCP));
+
+
+
+--elita
+CREATE OR REPLACE TYPE CzlonekElity AS OBJECT
+(
+idCE INTEGER,
+kot REF Kocur,
+sluga REF CzlonekPlebsu
+);
+
+CREATE TABLE Elita OF CzlonekElity
+(CONSTRAINT pk_CEO PRIMARY KEY (idCE));
+
+
+
+--konto
+CREATE OR REPLACE TYPE Konto AS OBJECT
+(
+idZ INTEGER,
+dataW DATE,
+dataU DATE,
+kot REF CzlonekElity
+);
+
+CREATE TABLE KontoO OF Konto
+(CONSTRAINT pk_KO PRIMARY KEY (idZ));
+
+
+
+-- triggery pilnujace aby kot nalezal tylko do elity albo plebsu
+CREATE OR REPLACE TRIGGER sprawdz_czy_z_plebsu
+BEFORE INSERT ON Elita
+FOR EACH ROW
+DECLARE
+    czy_w_plebsie NUMBER;
+    kot_w_plebsie EXCEPTION;
+    kot_dodawany REF Kocur;
+
+BEGIN
+    kot_dodawany := :NEW.kot; 
+
+    SELECT COUNT(*) INTO czy_w_plebsie FROM Plebs p WHERE p.kot=kot_dodawany;
+    DBMS_OUTPUT.PUT_LINE(czy_w_plebsie);
+    IF czy_w_plebsie > 0
+    THEN
+        RAISE kot_w_plebsie;
+    END IF;
+END;
+
+-- blad, jest w plebsie
+INSERT INTO Elita
+SELECT CzlonekElity(8, REF(O), NULL) FROM KocuryO O WHERE O.pseudo='DAMA';
+
+
+CREATE OR REPLACE TRIGGER sprawdz_czy_z_elity
+BEFORE INSERT ON Plebs
+FOR EACH ROW
+DECLARE
+    czy_w_elicie NUMBER;
+    kot_w_elicie EXCEPTION;
+    kot_dodawany REF Kocur;
+
+BEGIN
+    kot_dodawany := :NEW.kot; 
+
+    SELECT COUNT(*) INTO czy_w_elicie FROM Elita p WHERE p.kot=kot_dodawany;
+
+    IF czy_w_elicie > 0
+    THEN
+        RAISE kot_w_elicie;
+    END IF;
+END;
+
+
+
+
+-- inserts KocuryO
+INSERT INTO KocuryO
+VALUES(Kocur('MRUCZEK','M','TYGRYS', NULL,'2002-01-01',103,33));
+INSERT INTO KocuryO
+VALUES(Kocur('BOLEK','M','LYSY', 'TYGRYS','2006-08-15',72,21));
+INSERT INTO KocuryO
+VALUES(Kocur('KOREK','M','ZOMBI','TYGRYS','2004-03-16',75,13));
+INSERT INTO KocuryO
+VALUES(Kocur('PUNIA','D','KURKA','ZOMBI','2008-01-01',61,NULL));
+INSERT INTO KocuryO
+VALUES(Kocur('PUCEK','M','RAFA','TYGRYS','2006-10-15',65,NULL));
+INSERT INTO KocuryO
+VALUES(Kocur('JACEK','M','PLACEK','LYSY','2008-12-01',67,NULL));
+INSERT INTO KocuryO
+VALUES(Kocur('BARI','M','RURA','LYSY','2009-09-01',56,NULL));
+INSERT INTO KocuryO
+VALUES(Kocur('MICKA','D','LOLA','TYGRYS','2009-10-14',25,47));
+INSERT INTO KocuryO
+VALUES(Kocur('LUCEK','M','ZERO','KURKA','2010-03-01',43,NULL));
+INSERT INTO KocuryO
+VALUES(Kocur('SONIA','D','PUSZYSTA','ZOMBI','2010-11-18',20,35));
+INSERT INTO KocuryO
+VALUES(Kocur('LATKA','D','UCHO','RAFA','2011-01-01',40,NULL));
+INSERT INTO KocuryO
+VALUES(Kocur('DUDEK','M','MALY','RAFA','2011-05-15',40,NULL));
+INSERT INTO KocuryO
+VALUES(Kocur('CHYTRY','M','BOLEK','TYGRYS','2002-05-05',50,NULL));
+INSERT INTO KocuryO
+VALUES(Kocur('ZUZIA','D','SZYBKA','LYSY','2006-07-21',65,NULL));
+INSERT INTO KocuryO
+VALUES(Kocur('RUDA','D','MALA','TYGRYS','2006-09-17',22,42));
+INSERT INTO KocuryO
+VALUES(Kocur('BELA','D','LASKA','LYSY','2008-02-01',24,28));
+INSERT INTO KocuryO
+VALUES(Kocur('KSAWERY','M','MAN','RAFA','2008-07-12',51,NULL));
+INSERT INTO KocuryO
+VALUES(Kocur('MELA','D','DAMA','RAFA','2008-11-01',51,NULL));
+
+
+--inserts Plebs
+INSERT INTO Plebs
+SELECT CzlonekPlebsu(1, REF(O)) FROM KocuryO O WHERE O.pseudo='PUSZYSTA'; 
+INSERT INTO Plebs
+SELECT CzlonekPlebsu(2, REF(O)) FROM KocuryO O WHERE O.pseudo='LASKA'; 
+INSERT INTO Plebs
+SELECT CzlonekPlebsu(3, REF(O)) FROM KocuryO O WHERE O.pseudo='KURKA'; 
+INSERT INTO Plebs
+SELECT CzlonekPlebsu(4, REF(O)) FROM KocuryO O WHERE O.pseudo='PLACEK'; 
+INSERT INTO Plebs
+SELECT CzlonekPlebsu(5, REF(O)) FROM KocuryO O WHERE O.pseudo='SZYBKA';
+INSERT INTO Plebs
+SELECT CzlonekPlebsu(6, REF(O)) FROM KocuryO O WHERE O.pseudo='DAMA'; 
+INSERT INTO Plebs
+SELECT CzlonekPlebsu(7, REF(O)) FROM KocuryO O WHERE O.pseudo='MAN'; 
+INSERT INTO Plebs
+SELECT CzlonekPlebsu(8, REF(O)) FROM KocuryO O WHERE O.pseudo='UCHO';
+INSERT INTO Plebs
+SELECT CzlonekPlebsu(9, REF(O)) FROM KocuryO O WHERE O.pseudo='MALY'; 
+INSERT INTO Plebs
+SELECT CzlonekPlebsu(10, REF(O)) FROM KocuryO O WHERE O.pseudo='ZERO'; 
+INSERT INTO Plebs
+SELECT CzlonekPlebsu(11, REF(O)) FROM KocuryO O WHERE O.pseudo='RURA'; 
+
+
+--inserts Elita
+INSERT INTO Elita
+SELECT CzlonekElity(1, REF(O), NULL) FROM KocuryO O WHERE O.pseudo='TYGRYS'; 
+INSERT INTO Elita
+SELECT CzlonekElity(2, REF(O), NULL) FROM KocuryO O WHERE O.pseudo='LYSY';
+INSERT INTO Elita
+SELECT CzlonekElity(3, REF(O), NULL) FROM KocuryO O WHERE O.pseudo='ZOMBI';
+INSERT INTO Elita
+SELECT CzlonekElity(4, REF(O), NULL) FROM KocuryO O WHERE O.pseudo='RAFA';
+INSERT INTO Elita
+SELECT CzlonekElity(5, REF(O), NULL) FROM KocuryO O WHERE O.pseudo='LOLA';
+INSERT INTO Elita
+SELECT CzlonekElity(6, REF(O), NULL) FROM KocuryO O WHERE O.pseudo='BOLEK';
+INSERT INTO Elita
+SELECT CzlonekElity(7, REF(O), NULL) FROM KocuryO O WHERE O.pseudo='MALA';
+
+UPDATE Elita
+SET sluga = (SELECT REF(P) FROM Plebs P WHERE idCP=1)
+WHERE DEREF(kot).pseudo = 'TYGRYS';
+UPDATE Elita
+SET sluga = (SELECT REF(P) FROM Plebs P WHERE idCP=2)
+WHERE DEREF(kot).pseudo = 'LYSY';
+UPDATE Elita
+SET sluga = (SELECT REF(P) FROM Plebs P WHERE idCP=3)
+WHERE DEREF(kot).pseudo = 'ZOMBI';
+UPDATE Elita
+SET sluga = (SELECT REF(P) FROM Plebs P WHERE idCP=4)
+WHERE DEREF(kot).pseudo = 'RAFA';
+
+
+--inserts KontoO
+INSERT INTO KontoO
+SELECT Konto(1, '2022-01-11', NULL, REF(O)) FROM Elita O WHERE O.idCE=1;
+INSERT INTO KontoO
+SELECT Konto(2, '2022-01-12', NULL, REF(O)) FROM Elita O WHERE O.idCE=1;
+INSERT INTO KontoO
+SELECT Konto(3, '2022-01-13', NULL, REF(O)) FROM Elita O WHERE O.idCE=1;
+INSERT INTO KontoO
+SELECT Konto(4, '2022-01-11', NULL, REF(O)) FROM Elita O WHERE O.idCE=2;
+INSERT INTO KontoO
+SELECT Konto(5, '2022-01-11', NULL, REF(O)) FROM Elita O WHERE O.idCE=2;
+
+
+
+DROP TRIGGER sprawdz_czy_z_elity;
+DROP TRIGGER sprawdz_przydzial;
+DROP TRIGGER sprawdz_czy_z_plebsu;
+
+
+DELETE FROM KocuryO;
+DROP TABLE KocuryO;
+DELETE FROM Elita;
+DROP TABLE Elita;
+DELETE FROM Plebs;
+DROP TABLE Plebs;
+DROP TABLE KontoO;
+
+
+DROP TYPE BODY Konto;
+DROP TYPE Konto;
+
+DROP TYPE BODY CzlonekPlebsu;
+DROP TYPE CzlonekPlebsu;
+
+DROP TYPE BODY CzlonekElity;
+DROP TYPE CzlonekElity;
+
+DROP TYPE BODY Kocur;
+DROP TYPE Kocur;
+
+
+
+
+
+
+--referencje
+SELECT K.imie FROM Plebs P INNER JOIN KocuryO K ON P.kot = REF(K);
+
+--podzapytanie
+SELECT K.Dane()
+FROM KocuryO K
+WHERE REF(K) IN (SELECT E.sluga.kot FROM Elita E);
+
+--grupowanie
+SELECT O.pseudo, COUNT(*) FROM KontoO K INNER JOIN Elita E ON K.kot=REF(E) INNER JOIN KocuryO O ON E.kot=REF(O) GROUP BY O.pseudo;
+-- lub
+SELECT E.kot.pseudo, COUNT(*) FROM KontoO K INNER JOIN Elita E ON K.kot=REF(E) GROUP BY E.kot.pseudo;
+
+
+
+
+
+--lista 2
+--zad 18
+SELECT K1.imie, K1.w_stadku_od
+FROM KocuryO K1, KocuryO K2
+WHERE K2.imie='JACEK' AND K1.w_stadku_od < K2.w_stadku_od
+ORDER BY K1.w_stadku_od DESC
+
+--zad 23
+SELECT K.imie, 12*(NVL(K.przydzial_myszy, 0)+NVL(K.myszy_extra, 0)), DECODE(SIGN(12*(NVL(K.przydzial_myszy, 0)+NVL(K.myszy_extra, 0))-864), 0, '864', 1, 'powyzej 864', 'ponizej 864')
+FROM KocuryO K
+WHERE K.myszy_extra IS NOT NULL
+ORDER BY 12*(NVL(K.przydzial_myszy, 0)+NVL(K.myszy_extra, 0)) DESC
+
+--lista 3
+--zad37
+DECLARE
+    nr NUMBER := 1;
+BEGIN
+    FOR kot IN (SELECT * FROM KocuryO ORDER BY NVL(KocuryO.przydzial_myszy,0)+NVL(KocuryO.myszy_extra, 0) DESC) 
+        LOOP
+            DBMS_OUTPUT.PUT_LINE(kot.imie || ' ' || (NVL(kot.przydzial_myszy,0)+NVL(kot.myszy_extra, 0)));
+            EXIT WHEN nr=5;
+            nr := nr+1;
+        END LOOP;
+END;
+
+
+--35
+DECLARE
+    pseudo_kota KocuryO.pseudo%TYPE;
+    przydzial_calk NUMBER;
+    imie_kota KocuryO.imie%TYPE;
+    miesiac NUMBER;
+    spelnia_kryteria BOOLEAN := FALSE;
+BEGIN
+    pseudo_kota := '&pseudo';
+    SELECT SUM(NVL(K.przydzial_myszy,0)+NVL(K.myszy_extra,0))*12 INTO przydzial_calk FROM KocuryO K 
+    WHERE pseudo=pseudo_kota;
+    SELECT imie INTO imie_kota FROM KocuryO K WHERE K.pseudo=pseudo_kota;
+    SELECT TO_CHAR(w_stadku_od, 'MM') INTO miesiac FROM KocuryO K WHERE K.pseudo=pseudo_kota;
+    
+    IF przydzial_calk > 700
+        THEN DBMS_OUTPUT.PUT_LINE('calkowity roczny przydzial myszy >700');
+            spelnia_kryteria := TRUE;
+    END IF;
+
+    IF imie_kota LIKE '%A%'
+        THEN DBMS_OUTPUT.PUT_LINE('imie zawiera litere A');
+            spelnia_kryteria := TRUE;
+    END IF;
+    
+    IF miesiac=5
+        THEN DBMS_OUTPUT.PUT_LINE('maj jest miesiacem przystapienia do stada');
+            spelnia_kryteria := TRUE;
+    END IF;
+    
+    IF NOT spelnia_kryteria
+        THEN DBMS_OUTPUT.PUT_LINE('nie odpowiada kryteriom');
+    END IF;
+END;

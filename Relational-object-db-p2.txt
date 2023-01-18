@@ -1,0 +1,351 @@
+--49
+BEGIN
+    EXECUTE IMMEDIATE 'CREATE TABLE Myszy
+    (
+        nr_myszy NUMBER CONSTRAINT m_pk PRIMARY KEY,
+        lowca VARCHAR2(15) CONSTRAINT l_k_fk REFERENCES Kocury(pseudo),
+        zjadacz VARCHAR2(15) CONSTRAINT z_k_fk REFERENCES Kocury(pseudo),
+        waga_myszy NUMBER,
+        data_zlowienia DATE,
+        data_wydania DATE CONSTRAINT dw_c CHECK(NEXT_DAY(LAST_DAY(data_wydania) - INTERVAL ''7'' DAY, ''Wed'') = data_wydania)
+    )';
+END;
+
+CREATE TABLE Myszy
+(
+    nr_myszy NUMBER CONSTRAINT m_pk PRIMARY KEY,
+    lowca VARCHAR2(15) CONSTRAINT l_k_fk REFERENCES KocuryO(pseudo),
+    zjadacz VARCHAR2(15) CONSTRAINT z_k_fk REFERENCES KocuryO(pseudo),
+    waga_myszy NUMBER,
+    data_zlowienia DATE,
+    data_wydania DATE CONSTRAINT dw_c CHECK(NEXT_DAY(LAST_DAY(data_wydania) - INTERVAL '7' DAY, 'Wed') = data_wydania)
+);
+
+
+-- wypelnianie danymi
+-- od 01.01.2004 do 24.01.2023
+-- liczba wpsianych myszy musi być zgodna z liczbą otrzymanych przez koty myszy - stała
+-- kazdy kot moze upolowac w ciagu miesiaca tyle ile srednio w ciagu miesiaca jedza koty
+-- daty zlowienia rownomiernie w caigu miesiaca
+DECLARE
+    data_pocz DATE := TO_DATE('2004-01-01');
+    data_kon DATE := TO_DATE('2023-01-24');
+    liczba_myszy_na_mies NUMBER; 
+    liczba_miesiecy INTEGER := MONTHS_BETWEEN(data_kon, data_pocz);
+    
+    --liczba myszy do upolowania w miesiacach od data_pocz do data_kon
+    CURSOR myszy_do_upolowania IS 
+        SELECT (SELECT CEIL(AVG(NVL(przydzial_myszy, 0) + NVL(myszy_extra, 0))) FROM Kocury WHERE w_stadku_od<="biezaca_data") myszy, "biezaca_data"
+        FROM (SELECT LAST_DAY(ADD_MONTHS(data_kon, -nr_miesiaca)) "biezaca_data"
+              FROM (Select ROWNUM nr_miesiaca
+                    From dual
+                    Connect By Rownum <= liczba_miesiecy
+                    ORDER BY ROWNUM DESC
+                    )
+              );
+    
+    max_myszy_do_upolowania myszy_do_upolowania%ROWTYPE;
+        
+    CURSOR koty IS SELECT * FROM Kocury ORDER BY NVL(przydzial_myszy,0) + NVL(myszy_extra, 0), w_stadku_od;
+    kot Kocury%ROWTYPE;
+  
+    TYPE MyszyType IS RECORD(
+    nr_myszy NUMBER,
+    lowca VARCHAR2(15),
+    zjadacz VARCHAR2(15),
+    waga_myszy NUMBER,
+    data_zlowienia DATE,
+    data_wydania DATE
+    );
+    
+    TYPE MyszyTab IS TABLE OF MyszyType INDEX BY BINARY_INTEGER;
+    myszyDoWpisu MyszyTab;
+    myszyDoWpisuIndex BINARY_INTEGER := 1;
+    nr_myszy NUMBER := 1;
+  
+    myszyMag MyszyTab;
+    myszyMagIndex BINARY_INTEGER := 1;
+    
+    nr_myszy_przydzielonej NUMBER := 1;
+    
+BEGIN
+    OPEN myszy_do_upolowania;
+    
+    -- produkcja myszy
+    LOOP
+        FETCH myszy_do_upolowania INTO max_myszy_do_upolowania;
+        EXIT WHEN myszy_do_upolowania%NOTFOUND;
+        
+        OPEN koty;
+        
+        LOOP
+            FETCH koty INTO kot;
+            EXIT WHEN koty%NOTFOUND;
+            
+            -- jesli kot jest w stadzie
+            IF kot.w_stadku_od <= max_myszy_do_upolowania."biezaca_data" THEN
+                FOR i IN 1..max_myszy_do_upolowania.myszy
+                LOOP
+                    myszyDoWpisu(nr_myszy).nr_myszy := nr_myszy;
+                    myszyDoWpisu(nr_myszy).lowca := kot.pseudo;
+                    myszyDoWpisu(nr_myszy).zjadacz := NULL;
+                    myszyDoWpisu(nr_myszy).waga_myszy := CEIL(DBMS_RANDOM.VALUE(15, 30)); -- norma myszy
+                    myszyDoWpisu(nr_myszy).data_zlowienia := TRUNC(max_myszy_do_upolowania."biezaca_data", 'MM') + DBMS_RANDOM.VALUE(0, 20);
+                    myszyDoWpisu(nr_myszy).data_wydania := NULL;
+                    nr_myszy := nr_myszy+1;
+                END LOOP;
+            END IF;
+        END LOOP;
+        CLOSE koty;
+   END LOOP; 
+    CLOSE myszy_do_upolowania;
+    
+    --konsumpcja myszy
+    OPEN myszy_do_upolowania;
+    LOOP
+        FETCH myszy_do_upolowania INTO max_myszy_do_upolowania;
+        EXIT WHEN myszy_do_upolowania%NOTFOUND;
+        
+        OPEN koty;
+        
+        LOOP
+            FETCH koty INTO kot;
+            EXIT WHEN koty%NOTFOUND;
+            
+            -- jesli kot jest w stadzie
+            IF kot.w_stadku_od <= max_myszy_do_upolowania."biezaca_data" THEN
+                FOR i IN 1..NVL(kot.przydzial_myszy, 0)+NVL(kot.myszy_extra, 0)
+                LOOP
+                    myszyDoWpisu(nr_myszy_przydzielonej).zjadacz := kot.pseudo;
+                    myszyDoWpisu(nr_myszy_przydzielonej).data_wydania := NEXT_DAY(LAST_DAY(max_myszy_do_upolowania."biezaca_data") - INTERVAL '7' DAY, 'Środa');
+                    nr_myszy_przydzielonej := nr_myszy_przydzielonej+1;
+                END LOOP;
+            END IF;
+        END LOOP;
+        CLOSE koty;
+   END LOOP; 
+   CLOSE myszy_do_upolowania;
+   
+   
+   -- wydanie reszty mysz Tygrysowi w celu utylizacji
+   FOR i IN nr_myszy_przydzielonej..myszyDoWpisu.COUNT
+   LOOP
+    myszyDoWpisu(nr_myszy_przydzielonej).zjadacz := 'TYGRYS';
+    myszyDoWpisu(nr_myszy_przydzielonej).data_wydania := NEXT_DAY(LAST_DAY(data_kon) - INTERVAL '7' DAY, 'Środa');
+    nr_myszy_przydzielonej := nr_myszy_przydzielonej+1;
+   END LOOP;
+   
+   -- zapis do bazy
+   -- bulk binding
+    FORALL i IN 1 .. myszyDoWpisu.COUNT
+    INSERT INTO Myszy VALUES (
+    myszyDoWpisu(i).nr_myszy,
+    myszyDoWpisu(i).lowca,
+    myszyDoWpisu(i).zjadacz,
+    myszyDoWpisu(i).waga_myszy,
+    myszyDoWpisu(i).data_zlowienia,
+    myszyDoWpisu(i).data_wydania
+    );
+END;
+
+
+CREATE OR REPLACE TRIGGER sprawdz_wage_myszy
+BEFORE INSERT ON Myszy
+FOR EACH ROW 
+DECLARE
+    min_waga_myszy NUMBER := 15;
+    max_waga_myszy NUMBER := 30;
+BEGIN
+    IF :NEW.waga_myszy > max_waga_myszy OR :NEW.waga_myszy < min_waga_myszy THEN
+        RAISE_APPLICATION_ERROR(-20105, 'Zla norma wagowa myszy');
+    END IF;
+END;
+
+
+DROP TRIGGER sprawdz_wage_myszy;
+
+INSERT INTO Myszy VALUES(1151, 'TYGRYS', NULL, 16, '2022-12-01', NULL);
+DELETE FROM Myszy WHERE nr_myszy=1151;
+
+DELETE FROM Myszy;
+DROP TABLE Myszy;
+SELECT COUNT(*) FROM Myszy;
+
+
+
+
+-- przyklad relacji z upolowanymi myszami dla kota
+CREATE TABLE myszy_TYGRYS(
+    nr NUMBER CONSTRAINT mt_pk PRIMARY KEY,
+    waga_myszy NUMBER,
+    data_zlowienia DATE
+);
+
+INSERT INTO myszy_TYGRYS VALUES(1, 2, '2023-01-29');
+
+CREATE OR REPLACE PROCEDURE przyjmij_myszy(pseudo_kota Kocury.pseudo%TYPE, dzien DATE)
+AS
+    rejestr_upolowanych_myszy VARCHAR(30);
+    
+    TYPE MyszyType IS RECORD(
+        nr_myszy NUMBER,
+        waga_myszy NUMBER,
+        data_zlowienia DATE
+    );
+    TYPE MyszyTab IS TABLE OF MyszyType INDEX BY BINARY_INTEGER;
+    myszy_upolowane MyszyTab;
+    
+    
+    TYPE MyszyTable IS TABLE OF MYSZY%ROWTYPE INDEX BY BINARY_INTEGER;
+    myszy_do_wpisu MyszyTable;
+    
+    index_do_wpisu NUMBER;
+    
+BEGIN
+    rejestr_upolowanych_myszy := 'MYSZY_' || pseudo_kota;
+    
+    SELECT MAX(nr_myszy) + 1 INTO index_do_wpisu FROM Myszy;
+    
+    IF index_do_wpisu IS NULL
+    THEN
+        index_do_wpisu := 1;
+    END IF;
+    
+    EXECUTE IMMEDIATE 'SELECT * FROM ' || rejestr_upolowanych_myszy || ' WHERE data_zlowienia=''' || dzien || ''''
+    BULK COLLECT INTO myszy_upolowane;
+    
+    FOR i IN 1..myszy_upolowane.COUNT
+    LOOP
+        myszy_do_wpisu(i).nr_myszy := index_do_wpisu;
+        myszy_do_wpisu(i).waga_myszy := myszy_upolowane(i).waga_myszy;
+        myszy_do_wpisu(i).data_zlowienia := myszy_upolowane(i).data_zlowienia;
+        index_do_wpisu := index_do_wpisu + 1;
+        DBMS_OUTPUT.PUT_LINE(index_do_wpisu);
+    END LOOP;
+    
+    -- zaksieguj myszy
+    FORALL i IN 1..myszy_do_wpisu.COUNT
+    INSERT INTO Myszy VALUES(
+      myszy_do_wpisu(i).nr_myszy,
+      pseudo_kota,
+      NULL,
+      myszy_do_wpisu(i).waga_myszy,
+      myszy_do_wpisu(i).data_zlowienia,
+      NULL
+    ); 
+    
+    -- usun z tabeli kota
+    EXECUTE IMMEDIATE 'DELETE FROM MYSZY_' || pseudo_kota || ' WHERE data_zlowienia=''' || dzien || '''';
+END;
+
+SELECT * FROM MYSZY_TYGRYS WHERE data_zlowienia = '2023-01-29';
+SELECT * FROM Myszy;
+
+BEGIN
+    przyjmij_myszy('TYGRYS', '2023-01-29');
+END;
+SET SERVEROUTPUT ON;
+
+
+SELECT * FROM MYSZY_TYGRYS WHERE data_zlowienia = '2023-01-29';
+SELECT * FROM Myszy;
+
+ 
+
+-- wydawanie myszy
+CREATE OR REPLACE PROCEDURE wydaj_myszy AS
+
+    ostatnia_sroda_miesiaca DATE;
+    
+    TYPE MyszyTab IS TABLE OF Myszy%ROWTYPE INDEX BY BINARY_INTEGER;
+    niezjedzone_myszy MyszyTab;
+    
+    TYPE KocurMyszy IS RECORD (pseudo Kocury.pseudo%TYPE, myszy NUMBER(3));
+    Type KocuryTab IS TABLE OF KocurMyszy INDEX BY BINARY_INTEGER;
+    koty KocuryTab;
+    
+    kot_index NUMBER := 1;
+    mysz_przydzielona_w_rundzie BOOLEAN := FALSE;
+
+BEGIN
+
+    SELECT  * BULK COLLECT INTO niezjedzone_myszy FROM Myszy WHERE zjadacz IS NULL;
+    
+    --hierarchia kotów
+    SELECT pseudo, NVL(przydzial_myszy, 0)+NVL(myszy_extra,0) BULK COLLECT INTO koty FROM Kocury START WITH szef IS NULL CONNECT BY PRIOR pseudo = szef ORDER BY LEVEL ASC;
+    
+    SELECT NEXT_DAY(LAST_DAY(SYSDATE) - 7, 3) INTO ostatnia_sroda_miesiaca FROM dual;
+    
+    
+    <<po_myszach>>
+    FOR i IN 1..niezjedzone_myszy.COUNT
+    LOOP
+    
+        <<po_kotach>>
+        LOOP
+            -- jesli kot trafiony, to nastepna mysz
+            IF koty(kot_index).myszy > 0 THEN
+                koty(kot_index).myszy :=  koty(kot_index).myszy - 1;
+                
+                niezjedzone_myszy(i).zjadacz := koty(kot_index).pseudo;
+                niezjedzone_myszy(i).data_wydania := ostatnia_sroda_miesiaca;
+                
+                kot_index := kot_index + 1;
+                mysz_przydzielona_w_rundzie := TRUE;
+                
+                
+                -- nowa runda
+                IF kot_index > koty.COUNT THEN
+                    kot_index := 1;
+                    mysz_przydzielona_w_rundzie := FALSE;                
+                END IF;
+                
+                EXIT po_kotach;
+            
+            -- jesli kot nie jest trafiony, to nastepny kot
+            ELSE
+                kot_index := kot_index + 1;
+            
+                IF kot_index > koty.COUNT THEN
+                    
+                    -- wszystkie koty sa pelne
+                    IF mysz_przydzielona_w_rundzie=FALSE THEN
+                        EXIT po_myszach;
+                    ELSE
+                        -- nowa runda
+                        kot_index := 1;
+                        mysz_przydzielona_w_rundzie := FALSE;
+                    END IF;
+                END IF;
+            END IF;
+          
+        END LOOP;
+        
+    END LOOP;
+    
+    FORALL i IN 1..niezjedzone_myszy.COUNT
+        UPDATE  Myszy
+        SET data_wydania = niezjedzone_myszy(i).data_wydania, zjadacz = niezjedzone_myszy(i).zjadacz
+        WHERE   nr_myszy = niezjedzone_myszy(i).nr_myszy;
+END;
+
+
+BEGIN
+    wydaj_myszy();
+END;
+
+SELECT SUM(NVL(przydzial_myszy, 0) + NVL(myszy_extra, 0)) FROM Kocury; 
+
+DECLARE
+    Type ntab IS TABLE OF NUMBER INDEX BY BINARY_INTEGER;
+    nbs ntab;
+BEGIN
+    FOR i IN 1..1150
+    LOOP
+        nbs(i) := i;
+    END LOOP;
+    
+    FORALL i IN 1..1150
+        INSERT INTO Myszy
+        VALUES(nbs(i), 'TYGRYS', NULL, 17, '2022-12-01', NULL);
+END;
