@@ -253,6 +253,7 @@ SELECT * FROM Myszy;
  
 
 -- wydawanie myszy
+-- zabezpieczenie przed powtorna wyplata
 CREATE OR REPLACE PROCEDURE wydaj_myszy AS
 
     ostatnia_sroda_miesiaca DATE;
@@ -277,6 +278,17 @@ BEGIN
     SELECT NEXT_DAY(LAST_DAY(SYSDATE) - 7, 3) INTO ostatnia_sroda_miesiaca FROM dual;
     
     
+	-- **************************************************************************
+    -- zabezpieczenie przed powtorna wyplata
+    
+    SELECT COUNT(*) INTO poprzednia_wyplata FROM Myszy WHERE TO_CHAR(data_wydania, 'yyyy-mm-dd')=TO_CHAR(ostatnia_sroda_miesiaca, 'yyyy-mm-dd');
+    
+    IF poprzednia_wyplata > 0 THEN
+        RAISE_APPLICATION_ERROR(-20001,'Wyplata w tym miesiacu zostala juz wykonana');
+    END IF;
+    
+    -- **************************************************************************
+	
     <<po_myszach>>
     FOR i IN 1..niezjedzone_myszy.COUNT
     LOOP

@@ -10,6 +10,22 @@ myszy_extra NUMBER(3),
 MEMBER FUNCTION Dane RETURN VARCHAR2
 );
 
+
+-- kocury z ref na szefa
+
+--Kocury
+CREATE OR REPLACE TYPE Kocur AS OBJECT
+(imie VARCHAR2(15),
+plec VARCHAR2(1),
+pseudo VARCHAR2(15),
+szef REF Kocur,
+w_stadku_od DATE,
+przydzial_myszy NUMBER(3),
+myszy_extra NUMBER(3),
+MEMBER FUNCTION Dane RETURN VARCHAR2
+);
+
+
 CREATE OR REPLACE TYPE BODY Kocur AS
 MEMBER FUNCTION Dane RETURN VARCHAR2 IS
     BEGIN
@@ -20,6 +36,77 @@ END;
 CREATE TABLE KocuryO OF Kocur
 (CONSTRAINT pk_KocuryO PRIMARY KEY(pseudo));
 
+
+INSERT INTO KocuryO
+VALUES(Kocur('MRUCZEK','M','TYGRYS', NULL,'2002-01-01',103,33));
+
+INSERT INTO KocuryO
+SELECT (Kocur('BOLEK','M','LYSY', REF(k),'2006-08-15',72,21)) FROM KocuryO k WHERE k.pseudo='TYGRYS';
+
+INSERT INTO KocuryO
+SELECT  Kocur('KOREK','M','ZOMBI', REF(k),'2004-03-16',75,13) FROM KocuryO k WHERE k.pseudo='TYGRYS';
+
+INSERT INTO KocuryO
+SELECT  Kocur('PUNIA','D','KURKA', REF(k),'2008-01-01',61,NULL) FROM KocuryO k WHERE k.pseudo='ZOMBI';
+
+INSERT INTO KocuryO
+SELECT  Kocur('PUCEK','M','RAFA',REF(k),'2006-10-15',65,NULL) FROM KocuryO k WHERE k.pseudo='TYGRYS';
+
+INSERT INTO KocuryO
+SELECT  Kocur('JACEK','M','PLACEK',REF(k),'2008-12-01',67,NULL) FROM KocuryO k WHERE k.pseudo='LYSY';
+
+
+INSERT INTO KocuryO
+SELECT  Kocur('BARI','M','RURA',REF(k),'2009-09-01',56,NULL) FROM KocuryO k WHERE k.pseudo='LYSY';
+
+INSERT INTO KocuryO
+SELECT  Kocur('MICKA','D','LOLA',REF(k),'2009-10-14',25,47) FROM KocuryO k WHERE k.pseudo='TYGRYS';
+
+INSERT INTO KocuryO
+SELECT  Kocur('LUCEK','M','ZERO',REF(k),'2010-03-01',43,NULL) FROM KocuryO k WHERE k.pseudo='KURKA';
+
+INSERT INTO KocuryO
+SELECT  Kocur('SONIA','D','PUSZYSTA',REF(k),'2010-11-18',20,35) FROM KocuryO k WHERE k.pseudo='ZOMBI';
+
+INSERT INTO KocuryO
+SELECT  Kocur('LATKA','D','UCHO',REF(k),'2011-01-01',40,NULL) FROM KocuryO k WHERE k.pseudo='RAFA';
+
+INSERT INTO KocuryO
+SELECT  Kocur('DUDEK','M','MALY',REF(k),'2011-05-15',40,NULL) FROM KocuryO k WHERE k.pseudo='RAFA';
+
+INSERT INTO KocuryO
+SELECT  Kocur('CHYTRY','M','BOLEK',REF(k),'2002-05-05',50,NULL) FROM KocuryO k WHERE k.pseudo='TYGRYS';
+
+INSERT INTO KocuryO
+SELECT  Kocur('ZUZIA','D','SZYBKA',REF(k),'2006-07-21',65,NULL) FROM KocuryO k WHERE k.pseudo='LYSY';
+
+INSERT INTO KocuryO
+SELECT  Kocur('RUDA','D','MALA',REF(k),'2006-09-17',22,42) FROM KocuryO k WHERE k.pseudo='TYGRYS';
+
+INSERT INTO KocuryO
+SELECT  Kocur('BELA','D','LASKA',REF(k),'2008-02-01',24,28) FROM KocuryO k WHERE k.pseudo='LYSY';
+
+INSERT INTO KocuryO
+SELECT  Kocur('KSAWERY','M','MAN',REF(k),'2008-07-12',51,NULL) FROM KocuryO k WHERE k.pseudo='RAFA';
+
+INSERT INTO KocuryO
+SELECT  Kocur('MELA','D','DAMA',REF(k),'2008-11-01',51,NULL) FROM KocuryO k WHERE k.pseudo='RAFA';
+
+CREATE OR REPLACE TYPE BODY Kocur AS
+MEMBER FUNCTION Dane RETURN VARCHAR2 IS
+    BEGIN
+        RETURN imie || ', ' || ', ' || pseudo;  
+    END;
+END;
+
+CREATE TABLE KocuryO OF Kocur
+(CONSTRAINT pk_KocuryO PRIMARY KEY(pseudo));
+
+-- zad 19a
+SELECT k.imie, k.szef.pseudo, k.szef.szef.pseudo, k.szef.szef.szef.pseudo
+FROM KocuryO k 
+WHERE k.pseudo IN ('ZERO', 'MALY', 'UCHO', 'LOLA', 'MALA', 'LASKA', 'PUSZYSTA')
+;
 
 
 
@@ -267,6 +354,8 @@ SELECT E.kot.pseudo, COUNT(*) FROM KontoO K INNER JOIN Elita E ON K.kot=REF(E) G
 
 --lista 2
 --zad 18
+
+-- zad 19a zrobic lista 2
 SELECT K1.imie, K1.w_stadku_od
 FROM KocuryO K1, KocuryO K2
 WHERE K2.imie='JACEK' AND K1.w_stadku_od < K2.w_stadku_od
